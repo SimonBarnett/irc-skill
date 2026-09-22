@@ -7,7 +7,13 @@ import shutil
 from pathlib import Path
 
 SKILL = "irc-skill"
-CLIENT_SCRIPTS = ("irc_client.py", "install_skill.py")
+CLIENT_SCRIPTS = (
+    "irc_client.py",
+    "install_skill.py",
+    "agentic_compose.py",
+    "irc_seal.py",
+    "irc_filexfer.py",
+)
 
 
 def main() -> None:

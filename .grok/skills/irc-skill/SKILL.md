@@ -13,7 +13,7 @@ IRC **client** distributed as an **installable agent skill** (`SKILL.md` + scrip
 
 Locked brief: `docs/functional-spec.md` in [SimonBarnett/irc-skill](https://github.com/SimonBarnett/irc-skill). MRB home: GitHub issue #1.
 
-This product is **not** a replacement for `SimonBarnett/agentic_irc` (fleet TLS connector, SEAL, talk-seat TSR). Use `agentic_irc` for bobiverse wire until a later FR says otherwise.
+P2 client + **compose** with `SimonBarnett/agentic_irc` for **SEAL v2** and **FILE v1** (issue [#5](https://github.com/SimonBarnett/irc-skill/issues/5)). This skill does not replace the fleet talk-seat TSR; it reuses `agentic_irc` crypto/wire scripts instead of inventing a second stack.
 
 ## Hard gate — install as skill
 
@@ -37,7 +37,28 @@ Set `AGENTIC_IRC_HOST`, `AGENTIC_IRC_PORT`, `AGENTIC_IRC_NICK`, and `AGENTIC_IRC
 python ~/.grok/skills/irc-skill/scripts/irc_client.py --dry-run --host YOUR_HOST --port 6697 --nick YOUR_NICK
 ```
 
-Do not print or commit passwords. This skill is **not** a substitute for `agentic_irc` fleet SEAL/talk-seat tooling.
+Do not print or commit passwords.
+
+### SEAL and file transfer (#5)
+
+Install the **agentic-irc** skill (or clone that repo) so `~/.grok/skills/agentic-irc/scripts/seal.py` exists. Use the same `AGENTIC_IRC_HOME` identity as fleet agents (`python …/seal.py genkey` once per home).
+
+Compose wrappers (delegate to agentic_irc; no second crypto):
+
+```bash
+python ~/.grok/skills/irc-skill/scripts/irc_seal.py genkey
+python ~/.grok/skills/irc-skill/scripts/irc_seal.py pubkey
+python ~/.grok/skills/irc-skill/scripts/irc_filexfer.py offer --help
+```
+
+Live client with outbox drain + SEAL/FILE receive on a channel:
+
+```bash
+python ~/.grok/skills/irc-skill/scripts/irc_client.py \
+  --host YOUR_HOST --port 6697 --nick YOUR_NICK --channel '#your-room' --agentic-compose
+```
+
+Prepare offers with `irc_filexfer.py offer` (writes `outbox.txt` under `AGENTIC_IRC_HOME`); the compose client sends complete outbox lines and accepts tier **M** chunks or tier **S** SEAL envelopes.
 
 Do **not** document or rely on `dist/*.exe`, `ports/`, or any exe kit as how to get the client.
 
@@ -50,7 +71,7 @@ Do **not** document or rely on `dist/*.exe`, `ports/`, or any exe kit as how to 
 
 ## P2 client
 
-`scripts/irc_client.py` connects over TLS (6697 or `--tls`), registers with NICK/USER/PASS when configured, and stays up until interrupted. Optional `--channel` JOIN after welcome. No hard-coded servers.
+`scripts/irc_client.py` connects over TLS (6697 or `--tls`), registers with NICK/USER/PASS when configured, and stays up until interrupted. Optional `--channel` JOIN after welcome. `--agentic-compose` adds SEAL/FILE handling via agentic_irc. No hard-coded servers.
 
 ## Triggers
 
