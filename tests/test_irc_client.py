@@ -5,6 +5,7 @@ import importlib.util
 import os
 import subprocess
 import sys
+import threading
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -95,3 +96,79 @@ def test_missing_host_port_exit_2():
         check=False,
     )
     assert proc.returncode == 2
+
+
+def _test_config(nick: str = "fleetseat") -> mod.ClientConfig:
+    return mod.ClientConfig(
+        host="example.test",
+        port=6667,
+        nick=nick,
+        password="",
+        tls=False,
+        realname=nick,
+        channel="",
+    )
+
+
+class _CaptureSock:
+    def __init__(self, recv_chunks: list[bytes]) -> None:
+        self.sent: list[str] = []
+        self._chunks = list(recv_chunks)
+        self._lock = threading.Lock()
+
+    def sendall(self, data: bytes) -> None:
+        self.sent.append(data.decode("utf-8"))
+
+    def recv(self, _n: int) -> bytes:
+        with self._lock:
+            if self._chunks:
+                return self._chunks.pop(0)
+        return b""
+
+
+def test_alternate_nick_appends_l():
+    assert mod.alternate_nick("bob") == "bob_l"
+
+
+def test_433_then_001_continues_with_alt_nick():
+    cfg = _test_config("fleetseat")
+    session = mod.IrcSession(cfg)
+    sock = _CaptureSock([])
+    session.sock = sock
+    session.on_line(":srv 433 * fleetseat :Nickname is already in use")
+    assert not session.stop.is_set()
+    assert session.nick == "fleetseat_l"
+    assert any("NICK fleetseat_l" in line for line in sock.sent)
+    session.on_line(":srv 001 fleetseat_l :Welcome")
+    assert session.registered.is_set()
+    assert not session.stop.is_set()
+
+
+def test_433_twice_stops():
+    cfg = _test_config()
+    session = mod.IrcSession(cfg)
+    session.sock = _CaptureSock([])
+    session.on_line(":srv 433 * fleetseat :in use")
+    session.on_line(":srv 433 * fleetseat_l :still in use")
+    assert session.stop.is_set()
+
+
+def test_464_fails_closed_on_line():
+    cfg = _test_config()
+    session = mod.IrcSession(cfg)
+    session.sock = _CaptureSock([])
+    session.on_line(":srv 464 * :Password incorrect")
+    assert session.stop.is_set()
+    assert not session.registered.is_set()
+
+
+def test_464_run_exits_nonzero(monkeypatch):
+    chunk = b":srv 464 * :Password incorrect\r\n"
+
+    def fake_connect(_cfg: mod.ClientConfig) -> _CaptureSock:
+        return _CaptureSock([chunk])
+
+    monkeypatch.setattr(mod, "connect_socket", fake_connect)
+    session = mod.IrcSession(_test_config())
+    code = session.run()
+    assert code != 0

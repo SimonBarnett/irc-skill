@@ -93,6 +93,11 @@ def send_line(sock: ssl.SSLSocket | socket.socket, line: str) -> None:
     sock.sendall((line + "\r\n").encode("utf-8"))
 
 
+def alternate_nick(nick: str) -> str:
+    """One-shot alt when the server returns 433 nick-in-use (append ``_l``)."""
+    return f"{nick}_l"
+
+
 def parse_irc_line(line: str) -> tuple[str, str, list[str], str]:
     if not line:
         return "", "", [], ""
@@ -125,6 +130,8 @@ class IrcSession:
         self.registered = threading.Event()
         self.sock: ssl.SSLSocket | socket.socket | None = None
         self._compose: object | None = None
+        self.nick = cfg.nick
+        self._nick_retry_used = False
 
     def reader(self) -> None:
         assert self.sock is not None
@@ -158,12 +165,22 @@ class IrcSession:
             target = args[0]
             self._compose.handle_privmsg(prefix, target, body)
             return
-        if cmd in ("ERROR", "433", "464"):
+        if cmd == "433":
+            print(f"INFO server 433 {trailing or ' '.join(args)}", file=sys.stderr)
+            if not self._nick_retry_used and self.sock:
+                self._nick_retry_used = True
+                self.nick = alternate_nick(self.cfg.nick)
+                print(f"INFO nick-in-use; retrying NICK as {self.nick}", file=sys.stderr)
+                send_line(self.sock, "NICK " + self.nick)
+                return
+            self.stop.set()
+            return
+        if cmd in ("ERROR", "464"):
             print(f"INFO server {cmd} {trailing or ' '.join(args)}", file=sys.stderr)
             self.stop.set()
 
     def run(self) -> int:
-        if not self.cfg.nick:
+        if not self.nick:
             print(
                 "INFO irc-skill: nick UNKNOWN. Set AGENTIC_IRC_NICK or pass --nick.",
                 file=sys.stderr,
@@ -171,16 +188,23 @@ class IrcSession:
             return 2
         mode = "tls" if self.cfg.tls else "plain"
         print(
-            f"INFO connecting {self.cfg.host}:{self.cfg.port} ({mode}) nick={self.cfg.nick}",
+            f"INFO connecting {self.cfg.host}:{self.cfg.port} ({mode}) nick={self.nick}",
             file=sys.stderr,
         )
         self.sock = connect_socket(self.cfg)
         threading.Thread(target=self.reader, daemon=True).start()
         if self.cfg.password:
             send_line(self.sock, "PASS " + self.cfg.password)
-        send_line(self.sock, "NICK " + self.cfg.nick)
-        send_line(self.sock, f"USER {self.cfg.nick} 0 * :{self.cfg.realname}")
-        if not self.registered.wait(30):
+        send_line(self.sock, "NICK " + self.nick)
+        send_line(self.sock, f"USER {self.nick} 0 * :{self.cfg.realname}")
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            if self.registered.wait(timeout=0.2):
+                break
+            if self.stop.is_set():
+                print("INFO registration failed (server error)", file=sys.stderr)
+                return 1
+        if not self.registered.is_set():
             print("INFO NO 001 (registration timeout)", file=sys.stderr)
             self.stop.set()
             return 1
@@ -201,7 +225,7 @@ class IrcSession:
                     send_line(self.sock, raw)
 
             try:
-                self._compose = AgenticCompose(self.cfg.nick, self.cfg.channel, _send_raw)
+                self._compose = AgenticCompose(self.nick, self.cfg.channel, _send_raw)
             except RuntimeError as e:
                 print(f"INFO {e}", file=sys.stderr)
                 self.stop.set()
@@ -211,7 +235,7 @@ class IrcSession:
                 f"INFO agentic-compose on home={self._compose.home} channel={self.cfg.channel}",
                 file=sys.stderr,
             )
-        print(f"INFO registered as {self.cfg.nick}", file=sys.stderr)
+        print(f"INFO registered as {self.nick}", file=sys.stderr)
         while not self.stop.is_set():
             time.sleep(0.5)
         return 0

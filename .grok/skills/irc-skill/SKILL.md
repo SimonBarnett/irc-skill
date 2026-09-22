@@ -71,7 +71,7 @@ Do **not** document or rely on `dist/*.exe`, `ports/`, or any exe kit as how to 
 
 ## P2 client
 
-`scripts/irc_client.py` connects over TLS (6697 or `--tls`), registers with NICK/USER/PASS when configured, and stays up until interrupted. Optional `--channel` JOIN after welcome. `--agentic-compose` adds SEAL/FILE handling via agentic_irc. No hard-coded servers.
+`scripts/irc_client.py` connects over TLS (6697 or `--tls`), registers with NICK/USER/PASS when configured, and stays up until interrupted. On **433 nick-in-use**, it retries **once** with the same nick plus suffix `_l` (logged to stderr); **464** still fails closed. Optional `--channel` JOIN after welcome. `--agentic-compose` adds SEAL/FILE handling via agentic_irc. No hard-coded servers.
 
 ## Triggers
 
