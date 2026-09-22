@@ -82,6 +82,35 @@ def test_resolve_agentic_scripts_when_installed():
         assert (path / "seal.py").is_file()
 
 
+def test_format_incoming_privmsg():
+    line = ":alice!u@h PRIVMSG #bobiverse :hello"
+    prefix, cmd, args, trailing = mod.parse_irc_line(line)
+    out = mod.format_incoming_chat(cmd, prefix, args, trailing)
+    assert out == "FROM alice #bobiverse hello"
+
+
+def test_on_line_prints_privmsg_without_compose(capsys):
+    cfg = mod.ClientConfig(
+        host="h",
+        port=6697,
+        nick="bot",
+        password="",
+        tls=True,
+        realname="bot",
+        channel="#chan",
+    )
+    session = mod.IrcSession(cfg, agentic_compose=False)
+    session.on_line(":bob!u@h PRIVMSG #chan :ping")
+    captured = capsys.readouterr()
+    assert "FROM bob #chan ping" in captured.out
+
+
+def test_user_input_to_wire_channel():
+    assert mod.user_input_to_wire("hi there", "#bobiverse") == "PRIVMSG #bobiverse :hi there"
+    assert mod.user_input_to_wire("PRIVMSG #x :y", "#bobiverse") == "PRIVMSG #x :y"
+    assert mod.user_input_to_wire("/msg simon hello", "#bobiverse") == "PRIVMSG simon :hello"
+
+
 def test_missing_host_port_exit_2():
     env = os.environ.copy()
     for key in list(env):
