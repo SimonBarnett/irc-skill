@@ -98,6 +98,45 @@ def alternate_nick(nick: str) -> str:
     return f"{nick}_l"
 
 
+def nick_from_prefix(prefix: str) -> str:
+    if not prefix:
+        return ""
+    return prefix.split("!", 1)[0].lstrip(":")
+
+
+def format_incoming_chat(cmd: str, prefix: str, args: list[str], trailing: str) -> str | None:
+    if cmd not in ("PRIVMSG", "NOTICE") or not args:
+        return None
+    nick = nick_from_prefix(prefix)
+    return f"FROM {nick} {args[0]} {trailing}"
+
+
+def user_input_to_wire(text: str, default_channel: str) -> str | None:
+    line = text.strip()
+    if not line:
+        return None
+    if line.startswith("PRIVMSG "):
+        return line
+    if line.startswith("/msg "):
+        rest = line[5:].strip()
+        sp = rest.find(" ")
+        if sp < 0:
+            return None
+        target = rest[:sp]
+        body = rest[sp + 1 :].strip()
+        if not body:
+            return None
+        return f"PRIVMSG {target} :{body}"
+    if line.startswith("/"):
+        return None
+    ch = (default_channel or "").strip()
+    if not ch:
+        return None
+    if not ch.startswith("#"):
+        ch = "#" + ch.lstrip("#")
+    return f"PRIVMSG {ch} :{line}"
+
+
 def parse_irc_line(line: str) -> tuple[str, str, list[str], str]:
     if not line:
         return "", "", [], ""
@@ -159,17 +198,24 @@ class IrcSession:
             return
         if cmd == "001" or (cmd.isdigit() and int(cmd) == 1):
             self.registered.set()
+            if trailing:
+                print(f"FROM server * {trailing}", flush=True)
             return
-        if cmd == "PRIVMSG" and self._compose is not None and args:
-            body = trailing
-            target = args[0]
-            self._compose.handle_privmsg(prefix, target, body)
+        if cmd == "JOIN" and args:
+            print(f"FROM {nick_from_prefix(prefix)} JOIN {args[0]}", flush=True)
+            return
+        if cmd in ("PRIVMSG", "NOTICE") and args:
+            chat = format_incoming_chat(cmd, prefix, args, trailing)
+            if chat:
+                print(chat, flush=True)
+            if cmd == "PRIVMSG" and self._compose is not None:
+                self._compose.handle_privmsg(prefix, args[0], trailing)
             return
         if cmd == "433":
             print(f"INFO server 433 {trailing or ' '.join(args)}", file=sys.stderr)
             if not self._nick_retry_used and self.sock:
                 self._nick_retry_used = True
-                self.nick = alternate_nick(self.cfg.nick)
+                self.nick = alternate_nick(self.nick)
                 print(f"INFO nick-in-use; retrying NICK as {self.nick}", file=sys.stderr)
                 send_line(self.sock, "NICK " + self.nick)
                 return
@@ -236,9 +282,51 @@ class IrcSession:
                 file=sys.stderr,
             )
         print(f"INFO registered as {self.nick}", file=sys.stderr)
+        threading.Thread(target=self._stdin_loop, daemon=True).start()
+        if not self.agentic_compose:
+            threading.Thread(target=self._outbox_loop, daemon=True).start()
         while not self.stop.is_set():
             time.sleep(0.5)
         return 0
+
+    def _send_user_wire(self, wire: str) -> None:
+        if self.sock and wire:
+            send_line(self.sock, wire)
+
+    def _stdin_loop(self) -> None:
+        for raw in sys.stdin:
+            if self.stop.is_set():
+                break
+            wire = user_input_to_wire(raw, self.cfg.channel)
+            if wire:
+                self._send_user_wire(wire)
+
+    def _outbox_loop(self) -> None:
+        from agentic_compose import (
+            agentic_home,
+            load_outbox_pos,
+            save_outbox_pos,
+            take_outbox_lines,
+        )
+
+        path = agentic_home() / "outbox.txt"
+        while not self.stop.is_set():
+            try:
+                if not path.exists():
+                    time.sleep(1.0)
+                    continue
+                last = load_outbox_pos(path)
+                lines, new_last = take_outbox_lines(path, last)
+                for line in lines:
+                    wire = user_input_to_wire(line, self.cfg.channel)
+                    if wire:
+                        self._send_user_wire(wire)
+                    time.sleep(0.35)
+                if new_last != last:
+                    save_outbox_pos(path, new_last)
+            except OSError:
+                pass
+            time.sleep(1.0)
 
 
 def build_parser() -> argparse.ArgumentParser:
