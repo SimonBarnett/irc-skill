@@ -1,4 +1,4 @@
-# BT0 — irc-skill structure validator (issue #1 P1)
+# BT0 — irc-skill structure validator (issue #1 P1, #21 skills)
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
 $fail = 0
@@ -7,6 +7,13 @@ function Fail([string]$msg) {
     Write-Host "FAIL: $msg"
     $script:fail++
 }
+
+$extraSkills = @(
+    @{ Name = 'irc-skill-setup'; JobPattern = '(?i)(first-run|dry-run|GROK_HOME|6697)' },
+    @{ Name = 'irc-skill-use'; JobPattern = '(?i)(stdin|outbox|agentic-compose|JOIN)' },
+    @{ Name = 'irc-skill-monitor'; JobPattern = '(?i)(monitor|dry-run|433|AGENTIC_IRC_HOME)' },
+    @{ Name = 'harvest-irc-skill'; JobPattern = '(?i)(harvest|skill-harvest-log|CAST IRON)' }
+)
 
 $skillPath = Join-Path $root '.grok\skills\irc-skill\SKILL.md'
 if (-not (Test-Path -LiteralPath $skillPath)) {
@@ -28,6 +35,39 @@ if (-not (Test-Path -LiteralPath $skillPath)) {
     if ($skill -notmatch '(?i)file') {
         Fail 'SKILL.md must document file transfer (#5)'
     }
+    if ($skill -notmatch 'irc-skill-setup') {
+        Fail 'index SKILL.md must point at irc-skill-setup (#21)'
+    }
+    if ($skill -notmatch 'irc-skill-use') {
+        Fail 'index SKILL.md must point at irc-skill-use (#21)'
+    }
+    if ($skill -notmatch 'irc-skill-monitor') {
+        Fail 'index SKILL.md must point at irc-skill-monitor (#21)'
+    }
+    if ($skill -notmatch 'harvest-irc-skill') {
+        Fail 'index SKILL.md must point at harvest-irc-skill (#21)'
+    }
+}
+
+foreach ($entry in $extraSkills) {
+    $name = $entry.Name
+    $p = Join-Path $root ".grok\skills\$name\SKILL.md"
+    if (-not (Test-Path -LiteralPath $p)) {
+        Fail "missing leaflet $p (#21)"
+        continue
+    }
+    $text = Get-Content -LiteralPath $p -Raw
+    if ($text -notmatch "(?m)^name:\s*$name\s*$") {
+        Fail "SKILL.md frontmatter must include name: $name"
+    }
+    if ($text -notmatch $entry.JobPattern) {
+        Fail "$name SKILL.md must describe its job (#21)"
+    }
+}
+
+$harvestLog = Join-Path $root 'docs\skill-harvest-log.md'
+if (-not (Test-Path -LiteralPath $harvestLog)) {
+    Fail "missing $harvestLog (#21)"
 }
 
 $composePy = Join-Path $root 'scripts\agentic_compose.py'
@@ -67,6 +107,11 @@ if (-not (Test-Path -LiteralPath $readme)) {
     }
     if ($readmeText -notmatch '(?i)install') {
         Fail 'README must document skill install'
+    }
+    foreach ($sn in @('irc-skill-setup', 'irc-skill-use', 'irc-skill-monitor', 'harvest-irc-skill')) {
+        if ($readmeText -notmatch $sn) {
+            Fail "README must name $sn (#21)"
+        }
     }
 }
 

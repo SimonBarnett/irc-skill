@@ -14,7 +14,15 @@ From a clone of this repository:
 python scripts/install_skill.py
 ```
 
-This copies `.grok/skills/irc-skill/SKILL.md` and client scripts into `$GROK_HOME/skills/irc-skill/` (default `~/.grok/skills/irc-skill`). You can also copy those paths manually.
+This copies every leaflet under `.grok/skills/*/` into `$GROK_HOME/skills/<name>/` and client scripts into `$GROK_HOME/skills/irc-skill/scripts/` (default `~/.grok`). You can also copy those paths manually.
+
+| Skill | Job |
+|-------|-----|
+| `irc-skill` | Index + install |
+| `irc-skill-setup` | First-run env, TLS 6697, dry-run, identity home |
+| `irc-skill-use` | Connect, JOIN, stdin/outbox, optional compose |
+| `irc-skill-monitor` | Health checks without requiring live IRC in CI |
+| `harvest-irc-skill` | CAST IRON learnings back into this repo (`docs/skill-harvest-log.md`) |
 
 The Python IRC client (P2):
 
