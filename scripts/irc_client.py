@@ -1,48 +1,230 @@
 #!/usr/bin/env python3
-"""Thin IRC client entry for irc-skill (P1 stub). No exe drop; env-driven host/port."""
+"""Thin IRC client entry for irc-skill (P2). Env/CLI only; no exe drop."""
 from __future__ import annotations
 
 import argparse
 import os
+import signal
+import socket
+import ssl
 import sys
+import threading
+import time
+from dataclasses import dataclass
 
 
-def _env_host_port() -> tuple[str | None, int | None]:
-    host = (os.environ.get("AGENTIC_IRC_HOST") or "").strip() or None
-    port_raw = (os.environ.get("AGENTIC_IRC_PORT") or "").strip()
-    port: int | None = None
-    if port_raw:
-        try:
-            port = int(port_raw)
-        except ValueError:
-            print("INFO invalid AGENTIC_IRC_PORT", file=sys.stderr)
-            return host, None
-    return host, port
+@dataclass(frozen=True)
+class ClientConfig:
+    host: str
+    port: int
+    nick: str
+    password: str
+    tls: bool
+    realname: str
+    channel: str
 
 
-def main() -> None:
+def _env_str(key: str) -> str | None:
+    v = (os.environ.get(key) or "").strip()
+    return v or None
+
+
+def _env_port() -> int | None:
+    raw = _env_str("AGENTIC_IRC_PORT")
+    if not raw:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        return None
+
+
+def tls_for(port: int, tls_flag: bool, no_tls_flag: bool) -> bool:
+    if no_tls_flag:
+        return False
+    if tls_flag:
+        return True
+    return port == 6697
+
+
+def resolve_config(args: argparse.Namespace) -> ClientConfig | None:
+    host = (args.host or _env_str("AGENTIC_IRC_HOST") or "").strip()
+    port = args.port or _env_port() or 0
+    nick = (args.nick or _env_str("AGENTIC_IRC_NICK") or "").strip()
+    password = (args.password or _env_str("AGENTIC_IRC_PASSWORD") or "").strip()
+    if not host or not port:
+        return None
+    use_tls = tls_for(port, bool(args.tls), bool(args.no_tls))
+    channel = (args.channel or "").strip()
+    realname = (args.realname or nick or "irc-skill").strip()
+    return ClientConfig(
+        host=host,
+        port=port,
+        nick=nick,
+        password=password,
+        tls=use_tls,
+        realname=realname or "irc-skill",
+        channel=channel,
+    )
+
+
+def dry_run_message(cfg: ClientConfig) -> str:
+    mode = "tls" if cfg.tls else "plain"
+    nick_part = f" nick={cfg.nick}" if cfg.nick else ""
+    return f"INFO target {cfg.host}:{cfg.port} ({mode}){nick_part} (dry-run; no connection)"
+
+
+def connect_socket(cfg: ClientConfig) -> ssl.SSLSocket | socket.socket:
+    raw = socket.create_connection((cfg.host, cfg.port), 20)
+    raw.settimeout(None)
+    if not cfg.tls:
+        return raw
+    ctx = ssl.create_default_context()
+    sock = ctx.wrap_socket(raw, server_hostname=cfg.host)
+    sock.settimeout(None)
+    return sock
+
+
+def send_line(sock: ssl.SSLSocket | socket.socket, line: str) -> None:
+    sock.sendall((line + "\r\n").encode("utf-8"))
+
+
+def parse_irc_line(line: str) -> tuple[str, str, list[str], str]:
+    if not line:
+        return "", "", [], ""
+    if line[0] == ":":
+        sp = line.find(" ")
+        if sp < 0:
+            return line[1:], "", [], ""
+        prefix = line[1:sp]
+        rest = line[sp + 1 :]
+    else:
+        prefix = ""
+        rest = line
+    if " :" in rest:
+        head, trailing = rest.split(" :", 1)
+    else:
+        head, trailing = rest, ""
+    parts = head.split()
+    if not parts:
+        return prefix, "", [], trailing
+    cmd = parts[0]
+    args = parts[1:] if len(parts) > 1 else []
+    return prefix, cmd, args, trailing
+
+
+class IrcSession:
+    def __init__(self, cfg: ClientConfig) -> None:
+        self.cfg = cfg
+        self.stop = threading.Event()
+        self.registered = threading.Event()
+        self.sock: ssl.SSLSocket | socket.socket | None = None
+
+    def reader(self) -> None:
+        assert self.sock is not None
+        buf = b""
+        while not self.stop.is_set():
+            try:
+                chunk = self.sock.recv(4096)
+            except OSError:
+                break
+            if not chunk:
+                break
+            buf += chunk
+            while b"\r\n" in buf:
+                raw, buf = buf.split(b"\r\n", 1)
+                line = raw.decode("utf-8", errors="replace")
+                self.on_line(line)
+        self.stop.set()
+
+    def on_line(self, line: str) -> None:
+        _prefix, cmd, args, trailing = parse_irc_line(line)
+        if cmd == "PING":
+            payload = trailing or (args[0] if args else "")
+            if self.sock:
+                send_line(self.sock, "PONG " + payload)
+            return
+        if cmd == "001" or (cmd.isdigit() and int(cmd) == 1):
+            self.registered.set()
+            return
+        if cmd in ("ERROR", "433", "464"):
+            print(f"INFO server {cmd} {trailing or ' '.join(args)}", file=sys.stderr)
+            self.stop.set()
+
+    def run(self) -> int:
+        if not self.cfg.nick:
+            print(
+                "INFO irc-skill: nick UNKNOWN. Set AGENTIC_IRC_NICK or pass --nick.",
+                file=sys.stderr,
+            )
+            return 2
+        mode = "tls" if self.cfg.tls else "plain"
+        print(
+            f"INFO connecting {self.cfg.host}:{self.cfg.port} ({mode}) nick={self.cfg.nick}",
+            file=sys.stderr,
+        )
+        self.sock = connect_socket(self.cfg)
+        threading.Thread(target=self.reader, daemon=True).start()
+        if self.cfg.password:
+            send_line(self.sock, "PASS " + self.cfg.password)
+        send_line(self.sock, "NICK " + self.cfg.nick)
+        send_line(self.sock, f"USER {self.cfg.nick} 0 * :{self.cfg.realname}")
+        if not self.registered.wait(30):
+            print("INFO NO 001 (registration timeout)", file=sys.stderr)
+            self.stop.set()
+            return 1
+        if self.cfg.channel:
+            send_line(self.sock, "JOIN " + self.cfg.channel)
+        print(f"INFO registered as {self.cfg.nick}", file=sys.stderr)
+        while not self.stop.is_set():
+            time.sleep(0.5)
+        return 0
+
+
+def build_parser() -> argparse.ArgumentParser:
     p = argparse.ArgumentParser(
-        description="irc-skill client stub (P1). Set AGENTIC_IRC_HOST and AGENTIC_IRC_PORT to connect."
+        description="irc-skill Python IRC client (P2). Host/port/nick/pass from flags or AGENTIC_IRC_* env."
     )
     p.add_argument("--host", default="", help="IRC host (else AGENTIC_IRC_HOST)")
     p.add_argument("--port", type=int, default=0, help="IRC port (else AGENTIC_IRC_PORT)")
-    args = p.parse_args()
+    p.add_argument("--nick", default="", help="IRC nick (else AGENTIC_IRC_NICK)")
+    p.add_argument("--password", default="", help="IRC PASS (else AGENTIC_IRC_PASSWORD; never logged)")
+    p.add_argument("--channel", default="", help="Optional JOIN after 001")
+    p.add_argument("--realname", default="", help="USER realname (default nick or irc-skill)")
+    p.add_argument("--tls", action="store_true", help="Use TLS (also default for port 6697)")
+    p.add_argument("--no-tls", action="store_true", help="Plain socket even on 6697")
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Print resolved target (no password) and exit 0 without connecting",
+    )
+    return p
 
-    env_host, env_port = _env_host_port()
-    host = (args.host or env_host or "").strip()
-    port = args.port or env_port or 0
 
-    if not host or not port:
+def main(argv: list[str] | None = None) -> None:
+    args = build_parser().parse_args(argv)
+    cfg = resolve_config(args)
+    if cfg is None:
         print(
-            "INFO irc-skill P1 stub: host/port UNKNOWN (U2). "
-            "Set AGENTIC_IRC_HOST and AGENTIC_IRC_PORT or pass --host/--port when P2 locks behaviour.",
+            "INFO irc-skill: host/port UNKNOWN. "
+            "Set AGENTIC_IRC_HOST and AGENTIC_IRC_PORT or pass --host/--port.",
             file=sys.stderr,
         )
         raise SystemExit(2)
 
-    # P1: no wire implementation until U1–U6; confirm resolution only.
-    print(f"INFO target {host}:{port} (stub; no connection in P1)")
-    raise SystemExit(0)
+    if args.dry_run:
+        print(dry_run_message(cfg))
+        raise SystemExit(0)
+
+    session = IrcSession(cfg)
+
+    def _stop(*_a: object) -> None:
+        session.stop.set()
+
+    signal.signal(signal.SIGINT, _stop)
+    if hasattr(signal, "SIGTERM"):
+        signal.signal(signal.SIGTERM, _stop)
+    raise SystemExit(session.run())
 
 
 if __name__ == "__main__":

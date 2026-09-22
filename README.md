@@ -16,11 +16,13 @@ python scripts/install_skill.py
 
 This copies `.grok/skills/irc-skill/SKILL.md` and client scripts into `$GROK_HOME/skills/irc-skill/` (default `~/.grok/skills/irc-skill`). You can also copy those paths manually.
 
-The thin client entry (P1 stub):
+The Python IRC client (P2):
 
 ```bash
 python ~/.grok/skills/irc-skill/scripts/irc_client.py --help
 ```
+
+Configure via `AGENTIC_IRC_HOST`, `AGENTIC_IRC_PORT`, `AGENTIC_IRC_NICK`, `AGENTIC_IRC_PASSWORD` or matching CLI flags. Use `--dry-run` to print the resolved target without connecting.
 
 Do not use `dist/*.exe` or a `ports/` exe kit as the documented install path.
 
@@ -30,4 +32,9 @@ Do not use `dist/*.exe` or a `ports/` exe kit as the documented install path.
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\Validate-IrcSkill.ps1
 ```
 
-Build plan: [docs/build-and-test-plan.md](docs/build-and-test-plan.md).
+Build plans: [docs/build-and-test-plan.md](docs/build-and-test-plan.md), [docs/build-and-test-plan-p2.md](docs/build-and-test-plan-p2.md).
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\Test-IrcClientParse.ps1
+python -m pytest tests/ -q
+```
