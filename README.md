@@ -28,13 +28,22 @@ Configure via `AGENTIC_IRC_HOST`, `AGENTIC_IRC_PORT`, `AGENTIC_IRC_NICK`, `AGENT
 
 Do not use `dist/*.exe` or a `ports/` exe kit as the documented install path.
 
+## SMIRC-like UI (#20)
+
+Independently testable static UI (channels left, chat tabs bottom, user list). Layout MUST and UNKNOWN gates: [docs/smirc-ui-layout.md](docs/smirc-ui-layout.md).
+
+```bash
+python scripts/smirc_ui_serve.py --demo
+```
+
 ## Validate (BT0)
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\Validate-IrcSkill.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\Validate-SmircUi.ps1
 ```
 
-Build plans: [docs/build-and-test-plan.md](docs/build-and-test-plan.md), [docs/build-and-test-plan-p2.md](docs/build-and-test-plan-p2.md), [docs/build-and-test-plan-sft.md](docs/build-and-test-plan-sft.md).
+Build plans: [docs/build-and-test-plan.md](docs/build-and-test-plan.md), [docs/build-and-test-plan-p2.md](docs/build-and-test-plan-p2.md), [docs/build-and-test-plan-sft.md](docs/build-and-test-plan-sft.md), [docs/build-and-test-plan-smirc-ui-2026-09-22.md](docs/build-and-test-plan-smirc-ui-2026-09-22.md).
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\Test-IrcClientParse.ps1
