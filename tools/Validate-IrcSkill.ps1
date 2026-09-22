@@ -22,6 +22,29 @@ if (-not (Test-Path -LiteralPath $skillPath)) {
     if ($skill -notmatch '(?i)exe') {
         Fail 'SKILL.md must mention no exe-port install story'
     }
+    if ($skill -notmatch '(?i)SEAL') {
+        Fail 'SKILL.md must document SEAL support (#5)'
+    }
+    if ($skill -notmatch '(?i)file') {
+        Fail 'SKILL.md must document file transfer (#5)'
+    }
+}
+
+$composePy = Join-Path $root 'scripts\agentic_compose.py'
+$sealPy = Join-Path $root 'scripts\irc_seal.py'
+$filePy = Join-Path $root 'scripts\irc_filexfer.py'
+foreach ($p in @($composePy, $sealPy, $filePy)) {
+    if (-not (Test-Path -LiteralPath $p)) {
+        Fail "missing #5 compose script $p"
+    }
+}
+
+$clientPy = Join-Path $root 'scripts\irc_client.py'
+if (Test-Path -LiteralPath $clientPy) {
+    $clientText = Get-Content -LiteralPath $clientPy -Raw
+    if ($clientText -notmatch 'agentic-compose') {
+        Fail 'irc_client.py must expose --agentic-compose (#5)'
+    }
 }
 
 $installPy = Join-Path $root 'scripts\install_skill.py'

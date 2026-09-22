@@ -68,10 +68,14 @@ def resolve_config(args: argparse.Namespace) -> ClientConfig | None:
     )
 
 
-def dry_run_message(cfg: ClientConfig) -> str:
+def dry_run_message(cfg: ClientConfig, agentic_compose: bool = False) -> str:
     mode = "tls" if cfg.tls else "plain"
     nick_part = f" nick={cfg.nick}" if cfg.nick else ""
-    return f"INFO target {cfg.host}:{cfg.port} ({mode}){nick_part} (dry-run; no connection)"
+    compose_part = " agentic-compose" if agentic_compose else ""
+    return (
+        f"INFO target {cfg.host}:{cfg.port} ({mode}){nick_part}{compose_part} "
+        f"(dry-run; no connection)"
+    )
 
 
 def connect_socket(cfg: ClientConfig) -> ssl.SSLSocket | socket.socket:
@@ -114,11 +118,13 @@ def parse_irc_line(line: str) -> tuple[str, str, list[str], str]:
 
 
 class IrcSession:
-    def __init__(self, cfg: ClientConfig) -> None:
+    def __init__(self, cfg: ClientConfig, agentic_compose: bool = False) -> None:
         self.cfg = cfg
+        self.agentic_compose = agentic_compose
         self.stop = threading.Event()
         self.registered = threading.Event()
         self.sock: ssl.SSLSocket | socket.socket | None = None
+        self._compose: object | None = None
 
     def reader(self) -> None:
         assert self.sock is not None
@@ -138,7 +144,7 @@ class IrcSession:
         self.stop.set()
 
     def on_line(self, line: str) -> None:
-        _prefix, cmd, args, trailing = parse_irc_line(line)
+        prefix, cmd, args, trailing = parse_irc_line(line)
         if cmd == "PING":
             payload = trailing or (args[0] if args else "")
             if self.sock:
@@ -146,6 +152,11 @@ class IrcSession:
             return
         if cmd == "001" or (cmd.isdigit() and int(cmd) == 1):
             self.registered.set()
+            return
+        if cmd == "PRIVMSG" and self._compose is not None and args:
+            body = trailing
+            target = args[0]
+            self._compose.handle_privmsg(prefix, target, body)
             return
         if cmd in ("ERROR", "433", "464"):
             print(f"INFO server {cmd} {trailing or ' '.join(args)}", file=sys.stderr)
@@ -175,6 +186,31 @@ class IrcSession:
             return 1
         if self.cfg.channel:
             send_line(self.sock, "JOIN " + self.cfg.channel)
+        if self.agentic_compose:
+            if not self.cfg.channel:
+                print(
+                    "INFO irc-skill: --agentic-compose requires --channel for SEAL/FILE wire.",
+                    file=sys.stderr,
+                )
+                self.stop.set()
+                return 2
+            from agentic_compose import AgenticCompose
+
+            def _send_raw(raw: str) -> None:
+                if self.sock:
+                    send_line(self.sock, raw)
+
+            try:
+                self._compose = AgenticCompose(self.cfg.nick, self.cfg.channel, _send_raw)
+            except RuntimeError as e:
+                print(f"INFO {e}", file=sys.stderr)
+                self.stop.set()
+                return 2
+            threading.Thread(target=self._compose.outbox_loop, daemon=True).start()
+            print(
+                f"INFO agentic-compose on home={self._compose.home} channel={self.cfg.channel}",
+                file=sys.stderr,
+            )
         print(f"INFO registered as {self.cfg.nick}", file=sys.stderr)
         while not self.stop.is_set():
             time.sleep(0.5)
@@ -198,6 +234,11 @@ def build_parser() -> argparse.ArgumentParser:
         action="store_true",
         help="Print resolved target (no password) and exit 0 without connecting",
     )
+    p.add_argument(
+        "--agentic-compose",
+        action="store_true",
+        help="SEAL v2 + FILE v1 via agentic_irc scripts (needs AGENTIC_IRC_HOME identity; --channel)",
+    )
     return p
 
 
@@ -213,10 +254,10 @@ def main(argv: list[str] | None = None) -> None:
         raise SystemExit(2)
 
     if args.dry_run:
-        print(dry_run_message(cfg))
+        print(dry_run_message(cfg, bool(args.agentic_compose)))
         raise SystemExit(0)
 
-    session = IrcSession(cfg)
+    session = IrcSession(cfg, agentic_compose=bool(args.agentic_compose))
 
     def _stop(*_a: object) -> None:
         session.stop.set()

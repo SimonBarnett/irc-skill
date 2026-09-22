@@ -24,6 +24,8 @@ python ~/.grok/skills/irc-skill/scripts/irc_client.py --help
 
 Configure via `AGENTIC_IRC_HOST`, `AGENTIC_IRC_PORT`, `AGENTIC_IRC_NICK`, `AGENTIC_IRC_PASSWORD` or matching CLI flags. Use `--dry-run` to print the resolved target without connecting.
 
+**SEAL + file transfer (#5):** install the [agentic-irc](https://github.com/SimonBarnett/agentic_irc) skill, then use `scripts/irc_seal.py`, `scripts/irc_filexfer.py`, and `scripts/irc_client.py --agentic-compose --channel …` (compose path; see skill leaflet).
+
 Do not use `dist/*.exe` or a `ports/` exe kit as the documented install path.
 
 ## Validate (BT0)
@@ -32,7 +34,7 @@ Do not use `dist/*.exe` or a `ports/` exe kit as the documented install path.
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\Validate-IrcSkill.ps1
 ```
 
-Build plans: [docs/build-and-test-plan.md](docs/build-and-test-plan.md), [docs/build-and-test-plan-p2.md](docs/build-and-test-plan-p2.md).
+Build plans: [docs/build-and-test-plan.md](docs/build-and-test-plan.md), [docs/build-and-test-plan-p2.md](docs/build-and-test-plan-p2.md), [docs/build-and-test-plan-sft.md](docs/build-and-test-plan-sft.md).
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File .\tools\Test-IrcClientParse.ps1
