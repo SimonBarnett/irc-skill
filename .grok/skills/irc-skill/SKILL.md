@@ -1,15 +1,25 @@
 ---
 name: irc-skill
 description: >
-  Install and use the irc-skill IRC client as an agent skill (not per-platform
-  exe ports). Use when the user says IRC client skill, install irc-skill,
-  /irc-skill, skill install for IRC, or wants the product client from
-  SimonBarnett/irc-skill instead of copying executables around.
+  Index for the irc-skill IRC client skill pack (install + pointers). Use when
+  the user says IRC client skill, install irc-skill, /irc-skill, skill install
+  for IRC, or SimonBarnett/irc-skill instead of exe ports. For a specific job
+  load irc-skill-setup, irc-skill-use, or irc-skill-monitor; harvest via
+  harvest-irc-skill.
 ---
 
 # irc-skill
 
-IRC **client** distributed as an **installable agent skill** (`SKILL.md` + scripts). Operators install the skill pack; they do **not** ship a tree of per-OS / per-arch standalone `exe` drops as the install story.
+IRC **client** distributed as **installable agent skills** (`SKILL.md` + scripts). Operators install the skill pack; they do **not** ship per-OS `exe` drops as the install story.
+
+| Skill | Job |
+|-------|-----|
+| **irc-skill-setup** | First-run: install, env, TLS 6697, dry-run, `genkey` once per home |
+| **irc-skill-use** | Daily: connect, JOIN, stdin/outbox, optional `--agentic-compose` |
+| **irc-skill-monitor** | Health: process/log, dry-run, 433/`_l`, do not kill another seat's home |
+| **harvest-irc-skill** | CAST IRON: client learnings write back to this repo |
+
+Load the row that matches the operator question; this file is the index.
 
 Locked brief: `docs/functional-spec.md` in [SimonBarnett/irc-skill](https://github.com/SimonBarnett/irc-skill). MRB home: GitHub issue #1.
 
@@ -23,7 +33,7 @@ From a clone of this repo:
 python scripts/install_skill.py
 ```
 
-That copies this leaflet and `scripts/` into `$GROK_HOME/skills/irc-skill/` (default `~/.grok/skills/irc-skill`). Or copy `.grok/skills/irc-skill/` and `scripts/` there manually.
+That copies **every** leaflet under `.grok/skills/*/` into `$GROK_HOME/skills/<name>/` and client `scripts/` into `$GROK_HOME/skills/irc-skill/scripts/` (default `~/.grok`). Or copy those paths manually.
 
 Then invoke the Python IRC client (P2):
 
