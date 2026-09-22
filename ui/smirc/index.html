@@ -1,0 +1,60 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>irc-skill SMIRC UI (demo)</title>
+  <link rel="stylesheet" href="smirc.css" />
+</head>
+<body>
+  <div id="smirc-app" class="smirc-app" data-testid="smirc-app">
+    <aside class="smirc-channels" data-testid="smirc-channel-list" aria-label="Channels">
+      <header class="smirc-panel-title">Channels</header>
+      <ul id="channel-list" class="smirc-list"></ul>
+    </aside>
+
+    <main class="smirc-main">
+      <section class="smirc-chat" data-testid="smirc-chat-pane" aria-label="Chat">
+        <header id="chat-title" class="smirc-chat-title">#demo</header>
+        <div id="chat-log" class="smirc-log" role="log" aria-live="polite"></div>
+        <form id="chat-form" class="smirc-compose">
+          <div
+            id="image-drop"
+            class="smirc-drop"
+            data-testid="smirc-image-drop"
+            title="Drop images here"
+          >
+            Drop image
+          </div>
+          <input
+            id="chat-input"
+            type="text"
+            autocomplete="off"
+            placeholder="Message…"
+            aria-label="Message input"
+          />
+          <button type="submit">Send</button>
+        </form>
+      </section>
+
+      <nav class="smirc-tabs" data-testid="smirc-chat-tabs" aria-label="Open chats">
+        <ul id="tab-list" class="smirc-tab-list"></ul>
+      </nav>
+    </main>
+
+    <aside class="smirc-users" data-testid="smirc-user-list" aria-label="Users">
+      <header class="smirc-panel-title">Users</header>
+      <ul id="user-list" class="smirc-list"></ul>
+    </aside>
+  </div>
+
+  <template id="tpl-user-row">
+    <li class="smirc-user-row">
+      <span class="smirc-user-nick"></span>
+      <button type="button" class="smirc-btn-dm">DM</button>
+    </li>
+  </template>
+
+  <script src="smirc.js"></script>
+</body>
+</html>
